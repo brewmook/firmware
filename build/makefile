@@ -70,6 +70,9 @@ include $(PROJECT_DIR)tests/tests.mk
 -include $(PROJECT_DIR)$(USRSRC)test.mk
 endif
 
+# Pick up any sources to build from added libraries.
+CPPSRC += $(call target_files,libraries,*.cpp)
+
 # user sources specified, so override application.cpp and pull in files from 
 # the user source folder
 ifneq ($(USRSRC),"")       
@@ -97,6 +100,7 @@ LIB_CORE_LIBRARIES_PATH = libraries/
 
 # Include directories for optional "libraries" (eg. Serial2.h)
 INCLUDE_DIRS += $(LIB_CORE_LIBRARIES_PATH)Serial2
+INCLUDE_DIRS += $(LIB_CORE_LIBRARIES_PATH)
 
 # Additional include directories, applied to objects built for this target.
 # todo - delegate this to a include.mk file in each repo so include dirs are better

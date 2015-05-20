@@ -44,10 +44,6 @@
 // standard END-OF-LINE marker in HTTP
 #define CRLF "\r\n"
 
-// If processConnection is called without a buffer, it allocates one
-// of 32 bytes
-#define WEBDUINO_DEFAULT_REQUEST_LENGTH 32
-
 // How long to wait before considering a connection as dead when
 // reading the HTTP request.  Used to avoid DOS attacks.
 #ifndef WEBDUINO_READ_TIMEOUT_IN_MS
@@ -185,12 +181,6 @@ public:
 
   // start listening for connections
   void begin();
-
-  // check for an incoming connection, and if it exists, process it
-  // by reading its request and calling the appropriate command
-  // handler.  This version is for compatibility with apps written for
-  // version 1.1,  and allocates the URL "tail" buffer internally.
-  void processConnection();
 
   // check for an incoming connection, and if it exists, process it
   // by reading its request and calling the appropriate command
@@ -555,15 +545,6 @@ bool WebServer::dispatchCommand(ConnectionType requestType, char *verb,
 void WebServer::unhandledCommmand(ConnectionType requestType, char *verb,
         bool tail_complete) {
      m_failureCmd(*this, requestType, verb, tail_complete);
-}
-
-
-// processConnection with a default buffer
-void WebServer::processConnection()
-{
-  char request[WEBDUINO_DEFAULT_REQUEST_LENGTH];
-  int  request_len = WEBDUINO_DEFAULT_REQUEST_LENGTH;
-  processConnection(request, &request_len);
 }
 
 void WebServer::processConnection(char *buff, int *bufflen)

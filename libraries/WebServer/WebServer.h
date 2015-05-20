@@ -26,23 +26,11 @@
 #ifndef WEBDUINO_H_
 #define WEBDUINO_H_
 
-#define SPARK_CORE
-
 #include <string.h>
 #include <stdlib.h>
 #include <stdarg.h>
 
-#ifndef SPARK_CORE
-#include <Ethernet.h>
-#include <EthernetClient.h>
-#include <EthernetServer.h>
-#else
-
-#define pgm_read_byte(x) (*((uint8_t*)x))
-
-#endif
-
-// TODO - this is necessary to avoid sockets being unexpectedly closed.
+// TODO - this is necessary to avoid sockets being unexpectedly closed on Spark Core.
 // https://community.spark.io/t/unwanted-but-reproducable-disconnect-in-tcpclient/5265
 #define fixmedelay() delay(20)
 
@@ -142,10 +130,6 @@
 	#define SERIAL_DUMP(buf, len)
 #endif
 
-#if WEBDUINO_SERIAL_DEBUGGING && !defined(SPARK_CORE)
-#include <HardwareSerial.h>
-#endif
-
 // declared in wiring.h
 extern "C" unsigned long millis(void);
 
@@ -159,9 +143,6 @@ extern "C" unsigned long millis(void);
 // returns the number of elements in the array
 #define SIZE(array) (sizeof(array) / sizeof(*array))
 
-#ifdef _VARIANT_ARDUINO_DUE_X_
-#define pgm_read_byte(ptr) (unsigned char)(* ptr)
-#endif
 /********************************************************************
  * DECLARATIONS
  ********************************************************************/
@@ -234,9 +215,6 @@ public:
   // function.
   void setUrlPathCommand(UrlPathCommand *cmd);
 
-  // utility function to output CRLF pair
-  void printCRLF();
-
   // output a string stored in program memory, usually one defined
   // with the P macro
   void printP(const unsigned char *str);
@@ -252,14 +230,6 @@ public:
 
   // output raw data stored in program memory
   void writeP(const unsigned char *data, size_t length);
-
-  // output HTML for a radio button
-  void radioButton(const char *name, const char *val,
-                   const char *label, bool selected);
-
-  // output HTML for a checkbox
-  void checkBox(const char *name, const char *val,
-                const char *label, bool selected);
 
   // returns next character or -1 if we're at end-of-stream
   int read();
@@ -340,13 +310,9 @@ public:
   void reset(); 
 private:
   
-#ifdef SPARK_CORE
   TCPServer m_server;
   TCPClient m_client;
-#else
-  EthernetServer m_server;
-  EthernetClient m_client;
-#endif  
+
   const char *m_urlPrefix;
 
   unsigned char m_pushback[32];
@@ -373,9 +339,6 @@ private:
   bool dispatchCommand(ConnectionType requestType, char *verb,
                        bool tail_complete);
   void processHeaders();
-  void outputCheckboxOrRadio(const char *element, const char *name,
-                             const char *val, const char *label,
-                             bool selected);
 
   static void defaultFailCmd(WebServer &server, ConnectionType type,
                              char *url_tail, bool tail_complete);
@@ -472,34 +435,14 @@ void WebServer::flushBuf()
 void WebServer::writeP(const unsigned char *data, size_t length)
 {
   // copy data out of program memory into local storage
-#ifdef SPARK_CORE
     fixmedelay();    
    write(data, length);
-#else
-  while (length--)
-  {
-    write(pgm_read_byte(data++));
-  }
-#endif  
 }
 
 void WebServer::printP(const unsigned char *str)
 {
-  // copy data out of program memory into local storage
-#ifdef SPARK_CORE
     fixmedelay();
     write((const uint8_t*)str, strlen((const char*)str));
-#else
-  while (uint8_t value = pgm_read_byte(str++))
-  {
-    write(value);
-  }
-#endif  
-}
-
-void WebServer::printCRLF()
-{
-  print(CRLF);
 }
 
 void WebServer::printf(char *fmt, ... )
@@ -808,12 +751,12 @@ void WebServer::httpSuccess(const char *contentType,
 
   printP(successMsg2); 
   print(contentType);
-  printCRLF();
+  print(CRLF);
   if (extraHeaders) {
     print(extraHeaders);
-    printCRLF();    
+    print(CRLF);
   }
-  printCRLF();   // blank line starts body
+  print(CRLF);   // blank line starts body
 }
 
 void WebServer::httpSeeOther(const char *otherURL)
@@ -828,8 +771,8 @@ void WebServer::httpSeeOther(const char *otherURL)
   P(seeOtherMsg2) = "Location: ";
   printP(seeOtherMsg2);
   print(otherURL);
-  printCRLF();
-  printCRLF();
+  print(CRLF);
+  print(CRLF);
 }
 
 int WebServer::read()
@@ -1320,44 +1263,6 @@ void WebServer::processHeaders()
       return;
     }
   }
-}
-
-void WebServer::outputCheckboxOrRadio(const char *element, const char *name,
-                                      const char *val, const char *label,
-                                      bool selected)
-{
-  P(cbPart1a) = "<label><input type='";
-  P(cbPart1b) = "' name='";
-  P(cbPart2) = "' value='";
-  P(cbPart3) = "' ";
-  P(cbChecked) = "checked ";
-  P(cbPart4) = "/> ";
-  P(cbPart5) = "</label>";
-
-  printP(cbPart1a);
-  print(element);
-  printP(cbPart1b);
-  print(name);
-  printP(cbPart2);
-  print(val);
-  printP(cbPart3);
-  if (selected)
-    printP(cbChecked);
-  printP(cbPart4);
-  print(label);
-  printP(cbPart5);
-}
-
-void WebServer::checkBox(const char *name, const char *val,
-                         const char *label, bool selected)
-{
-  outputCheckboxOrRadio("checkbox", name, val, label, selected);
-}
-
-void WebServer::radioButton(const char *name, const char *val,
-                            const char *label, bool selected)
-{
-  outputCheckboxOrRadio("radio", name, val, label, selected);
 }
 
 uint8_t WebServer::available(){

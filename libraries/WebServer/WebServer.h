@@ -154,7 +154,7 @@ enum URLPARAM_RESULT { URLPARAM_OK,
                        URLPARAM_EOS         // No params left
 };
 
-class WebServer: public Print
+class WebServer
 {
 public:
   // passed to a command to indicate what kind of request was received
@@ -207,16 +207,10 @@ public:
 
   // output a string stored in program memory, usually one defined
   // with the P macro
-  void printP(const unsigned char *str);
+  void print(const unsigned char *str);
 
-  // inline overload for printP to handle signed char strings
-  void printP(const char *str) { printP((unsigned char*)str); }
-
-  // support for C style formating
-  void printf(char *fmt, ... );
-  #ifdef F
-  void printf(const __FlashStringHelper *format, ... );
-  #endif
+  // inline overload for print to handle signed char strings
+  void print(const char *str) { print((unsigned char*)str); }
 
   // output raw data stored in program memory
   void writeP(const unsigned char *data, size_t length);
@@ -429,37 +423,11 @@ void WebServer::writeP(const unsigned char *data, size_t length)
    write(data, length);
 }
 
-void WebServer::printP(const unsigned char *str)
+void WebServer::print(const unsigned char *str)
 {
     fixmedelay();
     write((const uint8_t*)str, strlen((const char*)str));
 }
-
-void WebServer::printf(char *fmt, ... )
-{
-  char tmp[128]; // resulting string limited to 128 chars
-  va_list args;
-  va_start (args, fmt );
-  vsnprintf(tmp, 128, fmt, args);
-  va_end (args);
-  print(tmp);
-}
-
-#ifdef F
-void WebServer::printf(const __FlashStringHelper *format, ... )
-{
-  char buf[128]; // resulting string limited to 128 chars
-  va_list ap;
-  va_start(ap, format);
-#ifdef __AVR__
-  vsnprintf_P(buf, sizeof(buf), (const char *)format, ap); // progmem for AVR
-#else
-  vsnprintf(buf, sizeof(buf), (const char *)format, ap); // for the rest of the world
-#endif  
-  va_end(ap);
-  print(buf);
-}
-#endif
 
 bool WebServer::dispatchCommand(ConnectionType requestType, char *verb,
         bool tail_complete)
@@ -623,10 +591,10 @@ bool WebServer::checkCredentials(const char authCredentials[45])
 void WebServer::httpFail()
 {
   P(failMsg1) = "HTTP/1.0 400 Bad Request" CRLF;
-  printP(failMsg1);
+  print(failMsg1);
 
 #ifndef WEBDUINO_SUPRESS_SERVER_HEADER
-  printP(webServerHeader);
+  print(webServerHeader);
 #endif
 
   P(failMsg2) = 
@@ -634,7 +602,7 @@ void WebServer::httpFail()
     CRLF
     WEBDUINO_FAIL_MESSAGE;
 
-  printP(failMsg2);
+  print(failMsg2);
 }
 
 void WebServer::defaultFailCmd(WebServer &server,
@@ -651,7 +619,7 @@ void WebServer::noRobots(ConnectionType type)
   if (type != HEAD)
   {
     P(allowNoneMsg) = "User-agent: *" CRLF "Disallow: /" CRLF;
-    printP(allowNoneMsg);
+    print(allowNoneMsg);
   }
 }
 
@@ -668,10 +636,10 @@ void WebServer::favicon(ConnectionType type)
 void WebServer::httpUnauthorized()
 {
   P(unauthMsg1) = "HTTP/1.0 401 Authorization Required" CRLF;
-  printP(unauthMsg1);
+  print(unauthMsg1);
 
 #ifndef WEBDUINO_SUPRESS_SERVER_HEADER
-  printP(webServerHeader);
+  print(webServerHeader);
 #endif
 
   P(unauthMsg2) = 
@@ -680,16 +648,16 @@ void WebServer::httpUnauthorized()
     CRLF
     WEBDUINO_AUTH_MESSAGE;
 
-  printP(unauthMsg2);
+  print(unauthMsg2);
 }
 
 void WebServer::httpServerError()
 {
   P(servErrMsg1) = "HTTP/1.0 500 Internal Server Error" CRLF;
-  printP(servErrMsg1);
+  print(servErrMsg1);
 
 #ifndef WEBDUINO_SUPRESS_SERVER_HEADER
-  printP(webServerHeader);
+  print(webServerHeader);
 #endif
 
   P(servErrMsg2) = 
@@ -697,40 +665,40 @@ void WebServer::httpServerError()
     CRLF
     WEBDUINO_SERVER_ERROR_MESSAGE;
 
-  printP(servErrMsg2);
+  print(servErrMsg2);
 }
 
 void WebServer::httpNoContent()
 {
   P(noContentMsg1) = "HTTP/1.0 204 NO CONTENT" CRLF;
-  printP(noContentMsg1);
+  print(noContentMsg1);
 
 #ifndef WEBDUINO_SUPRESS_SERVER_HEADER
-  printP(webServerHeader);
+  print(webServerHeader);
 #endif
 
   P(noContentMsg2) = 
     CRLF
     CRLF;
 
-  printP(noContentMsg2);
+  print(noContentMsg2);
 }
 
 void WebServer::httpSuccess(const char *contentType,
                             const char *extraHeaders)
 {
   P(successMsg1) = "HTTP/1.0 200 OK" CRLF;
-  printP(successMsg1);
+  print(successMsg1);
 
 #ifndef WEBDUINO_SUPRESS_SERVER_HEADER
-  printP(webServerHeader);
+  print(webServerHeader);
 #endif
   
   P(successMsg2) = 
     "Access-Control-Allow-Origin: *" CRLF
     "Content-Type: ";
 
-  printP(successMsg2); 
+  print(successMsg2);
   print(contentType);
   print(CRLF);
   if (extraHeaders) {
@@ -743,14 +711,14 @@ void WebServer::httpSuccess(const char *contentType,
 void WebServer::httpSeeOther(const char *otherURL)
 {
   P(seeOtherMsg1) = "HTTP/1.0 303 See Other" CRLF;
-  printP(seeOtherMsg1);
+  print(seeOtherMsg1);
 
 #ifndef WEBDUINO_SUPRESS_SERVER_HEADER
-  printP(webServerHeader);
+  print(webServerHeader);
 #endif
 
   P(seeOtherMsg2) = "Location: ";
-  printP(seeOtherMsg2);
+  print(seeOtherMsg2);
   print(otherURL);
   print(CRLF);
   print(CRLF);

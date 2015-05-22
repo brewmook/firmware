@@ -205,15 +205,10 @@ public:
   // function.
   void setUrlPathCommand(UrlPathCommand *cmd);
 
-  // output a string stored in program memory, usually one defined
-  // with the P macro
-  void print(const unsigned char *str);
-
-  // inline overload for print to handle signed char strings
-  void print(const char *str) { print((unsigned char*)str); }
-
-  // output raw data stored in program memory
-  void writeP(const unsigned char *data, size_t length);
+  size_t write(uint8_t);
+  size_t write(const uint8_t *buffer, size_t size);
+  size_t write(const unsigned char *str) { return write((const uint8_t*)str, strlen((const char*)str)); }
+  size_t write(const char *str) { return write((const unsigned char*)str); }
 
   // returns next character or -1 if we're at end-of-stream
   int read();
@@ -279,10 +274,6 @@ public:
   // preferable to outputting HTML from a post because you can then
   // refresh the page without getting a "resubmit form" dialog.
   void httpSeeOther(const char *otherURL);
-
-  // implementation of write used to implement Print interface
-  virtual size_t write(uint8_t);
-  virtual size_t write(const uint8_t *buffer, size_t size);
 
   // tells if there is anything to process
   uint8_t available();
@@ -390,8 +381,7 @@ size_t WebServer::write(uint8_t ch)
 
   if(m_bufFill == sizeof(m_buffer))
   {
-    m_client.write(m_buffer, sizeof(m_buffer));
-    m_bufFill = 0;
+    flushBuf();
   }
 
   return sizeof(ch);
@@ -414,19 +404,6 @@ void WebServer::flushBuf()
     m_client.write(m_buffer, m_bufFill);
     m_bufFill = 0;
   }
-}
-
-void WebServer::writeP(const unsigned char *data, size_t length)
-{
-  // copy data out of program memory into local storage
-    fixmedelay();    
-   write(data, length);
-}
-
-void WebServer::print(const unsigned char *str)
-{
-    fixmedelay();
-    write((const uint8_t*)str, strlen((const char*)str));
 }
 
 bool WebServer::dispatchCommand(ConnectionType requestType, char *verb,
@@ -591,10 +568,10 @@ bool WebServer::checkCredentials(const char authCredentials[45])
 void WebServer::httpFail()
 {
   P(failMsg1) = "HTTP/1.0 400 Bad Request" CRLF;
-  print(failMsg1);
+  write(failMsg1);
 
 #ifndef WEBDUINO_SUPRESS_SERVER_HEADER
-  print(webServerHeader);
+  write(webServerHeader);
 #endif
 
   P(failMsg2) = 
@@ -602,7 +579,7 @@ void WebServer::httpFail()
     CRLF
     WEBDUINO_FAIL_MESSAGE;
 
-  print(failMsg2);
+  write(failMsg2);
 }
 
 void WebServer::defaultFailCmd(WebServer &server,
@@ -619,7 +596,7 @@ void WebServer::noRobots(ConnectionType type)
   if (type != HEAD)
   {
     P(allowNoneMsg) = "User-agent: *" CRLF "Disallow: /" CRLF;
-    print(allowNoneMsg);
+    write(allowNoneMsg);
   }
 }
 
@@ -629,17 +606,17 @@ void WebServer::favicon(ConnectionType type)
   if (type != HEAD)
   {
     P(faviconIco) = WEBDUINO_FAVICON_DATA;
-    writeP(faviconIco, sizeof(faviconIco));
+    write(faviconIco, sizeof(faviconIco));
   }
 }
 
 void WebServer::httpUnauthorized()
 {
   P(unauthMsg1) = "HTTP/1.0 401 Authorization Required" CRLF;
-  print(unauthMsg1);
+  write(unauthMsg1);
 
 #ifndef WEBDUINO_SUPRESS_SERVER_HEADER
-  print(webServerHeader);
+  write(webServerHeader);
 #endif
 
   P(unauthMsg2) = 
@@ -648,16 +625,16 @@ void WebServer::httpUnauthorized()
     CRLF
     WEBDUINO_AUTH_MESSAGE;
 
-  print(unauthMsg2);
+  write(unauthMsg2);
 }
 
 void WebServer::httpServerError()
 {
   P(servErrMsg1) = "HTTP/1.0 500 Internal Server Error" CRLF;
-  print(servErrMsg1);
+  write(servErrMsg1);
 
 #ifndef WEBDUINO_SUPRESS_SERVER_HEADER
-  print(webServerHeader);
+  write(webServerHeader);
 #endif
 
   P(servErrMsg2) = 
@@ -665,63 +642,63 @@ void WebServer::httpServerError()
     CRLF
     WEBDUINO_SERVER_ERROR_MESSAGE;
 
-  print(servErrMsg2);
+  write(servErrMsg2);
 }
 
 void WebServer::httpNoContent()
 {
   P(noContentMsg1) = "HTTP/1.0 204 NO CONTENT" CRLF;
-  print(noContentMsg1);
+  write(noContentMsg1);
 
 #ifndef WEBDUINO_SUPRESS_SERVER_HEADER
-  print(webServerHeader);
+  write(webServerHeader);
 #endif
 
   P(noContentMsg2) = 
     CRLF
     CRLF;
 
-  print(noContentMsg2);
+  write(noContentMsg2);
 }
 
 void WebServer::httpSuccess(const char *contentType,
                             const char *extraHeaders)
 {
   P(successMsg1) = "HTTP/1.0 200 OK" CRLF;
-  print(successMsg1);
+  write(successMsg1);
 
 #ifndef WEBDUINO_SUPRESS_SERVER_HEADER
-  print(webServerHeader);
+  write(webServerHeader);
 #endif
   
   P(successMsg2) = 
     "Access-Control-Allow-Origin: *" CRLF
     "Content-Type: ";
 
-  print(successMsg2);
-  print(contentType);
-  print(CRLF);
+  write(successMsg2);
+  write(contentType);
+  write(CRLF);
   if (extraHeaders) {
-    print(extraHeaders);
-    print(CRLF);
+    write(extraHeaders);
+    write(CRLF);
   }
-  print(CRLF);   // blank line starts body
+  write(CRLF);   // blank line starts body
 }
 
 void WebServer::httpSeeOther(const char *otherURL)
 {
   P(seeOtherMsg1) = "HTTP/1.0 303 See Other" CRLF;
-  print(seeOtherMsg1);
+  write(seeOtherMsg1);
 
 #ifndef WEBDUINO_SUPRESS_SERVER_HEADER
-  print(webServerHeader);
+  write(webServerHeader);
 #endif
 
   P(seeOtherMsg2) = "Location: ";
-  print(seeOtherMsg2);
-  print(otherURL);
-  print(CRLF);
-  print(CRLF);
+  write(seeOtherMsg2);
+  write(otherURL);
+  write(CRLF);
+  write(CRLF);
 }
 
 int WebServer::read()

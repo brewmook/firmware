@@ -129,13 +129,6 @@
 // declared in wiring.h
 extern "C" unsigned long millis(void);
 
-// declare a static string
-#ifdef __AVR__
-#define P(name)   static const unsigned char name[] __attribute__(( section(".progmem." #name) ))
-#else
-#define P(name)   static const unsigned char name[]
-#endif
-
 // returns the number of elements in the array
 #define SIZE(array) (sizeof(array) / sizeof(*array))
 
@@ -344,7 +337,7 @@ WebServer::WebServer(const char *urlPrefix, uint16_t port) :
 {
 }
 
-P(webServerHeader) = "Server: Webduino/" WEBDUINO_VERSION_STRING CRLF;
+static const unsigned char webServerHeader[] = "Server: Webduino/" WEBDUINO_VERSION_STRING CRLF;
 
 void WebServer::begin()
 {
@@ -567,14 +560,14 @@ bool WebServer::checkCredentials(const char authCredentials[45])
 
 void WebServer::httpFail()
 {
-  P(failMsg1) = "HTTP/1.0 400 Bad Request" CRLF;
+  static const unsigned char failMsg1[] = "HTTP/1.0 400 Bad Request" CRLF;
   write(failMsg1);
 
 #ifndef WEBDUINO_SUPRESS_SERVER_HEADER
   write(webServerHeader);
 #endif
 
-  P(failMsg2) = 
+  static const unsigned char failMsg2[] =
     "Content-Type: text/html" CRLF
     CRLF
     WEBDUINO_FAIL_MESSAGE;
@@ -595,7 +588,7 @@ void WebServer::noRobots(ConnectionType type)
   httpSuccess("text/plain");
   if (type != HEAD)
   {
-    P(allowNoneMsg) = "User-agent: *" CRLF "Disallow: /" CRLF;
+    static const unsigned char allowNoneMsg[] = "User-agent: *" CRLF "Disallow: /" CRLF;
     write(allowNoneMsg);
   }
 }
@@ -605,21 +598,21 @@ void WebServer::favicon(ConnectionType type)
   httpSuccess("image/x-icon","Cache-Control: max-age=31536000");
   if (type != HEAD)
   {
-    P(faviconIco) = WEBDUINO_FAVICON_DATA;
+    static const unsigned char faviconIco[] = WEBDUINO_FAVICON_DATA;
     write(faviconIco, sizeof(faviconIco));
   }
 }
 
 void WebServer::httpUnauthorized()
 {
-  P(unauthMsg1) = "HTTP/1.0 401 Authorization Required" CRLF;
+  static const unsigned char unauthMsg1[] = "HTTP/1.0 401 Authorization Required" CRLF;
   write(unauthMsg1);
 
 #ifndef WEBDUINO_SUPRESS_SERVER_HEADER
   write(webServerHeader);
 #endif
 
-  P(unauthMsg2) = 
+  static const unsigned char unauthMsg2[] =
     "Content-Type: text/html" CRLF
     "WWW-Authenticate: Basic realm=\"" WEBDUINO_AUTH_REALM "\"" CRLF
     CRLF
@@ -630,14 +623,14 @@ void WebServer::httpUnauthorized()
 
 void WebServer::httpServerError()
 {
-  P(servErrMsg1) = "HTTP/1.0 500 Internal Server Error" CRLF;
+  static const unsigned char servErrMsg1[] = "HTTP/1.0 500 Internal Server Error" CRLF;
   write(servErrMsg1);
 
 #ifndef WEBDUINO_SUPRESS_SERVER_HEADER
   write(webServerHeader);
 #endif
 
-  P(servErrMsg2) = 
+  static const unsigned char servErrMsg2[] =
     "Content-Type: text/html" CRLF
     CRLF
     WEBDUINO_SERVER_ERROR_MESSAGE;
@@ -647,14 +640,14 @@ void WebServer::httpServerError()
 
 void WebServer::httpNoContent()
 {
-  P(noContentMsg1) = "HTTP/1.0 204 NO CONTENT" CRLF;
+  static const unsigned char noContentMsg1[] = "HTTP/1.0 204 NO CONTENT" CRLF;
   write(noContentMsg1);
 
 #ifndef WEBDUINO_SUPRESS_SERVER_HEADER
   write(webServerHeader);
 #endif
 
-  P(noContentMsg2) = 
+  static const unsigned char noContentMsg2[] =
     CRLF
     CRLF;
 
@@ -664,14 +657,14 @@ void WebServer::httpNoContent()
 void WebServer::httpSuccess(const char *contentType,
                             const char *extraHeaders)
 {
-  P(successMsg1) = "HTTP/1.0 200 OK" CRLF;
+  static const unsigned char successMsg1[] = "HTTP/1.0 200 OK" CRLF;
   write(successMsg1);
 
 #ifndef WEBDUINO_SUPRESS_SERVER_HEADER
   write(webServerHeader);
 #endif
   
-  P(successMsg2) = 
+  static const unsigned char successMsg2[] =
     "Access-Control-Allow-Origin: *" CRLF
     "Content-Type: ";
 
@@ -687,14 +680,14 @@ void WebServer::httpSuccess(const char *contentType,
 
 void WebServer::httpSeeOther(const char *otherURL)
 {
-  P(seeOtherMsg1) = "HTTP/1.0 303 See Other" CRLF;
+  static const unsigned char seeOtherMsg1[] = "HTTP/1.0 303 See Other" CRLF;
   write(seeOtherMsg1);
 
 #ifndef WEBDUINO_SUPRESS_SERVER_HEADER
   write(webServerHeader);
 #endif
 
-  P(seeOtherMsg2) = "Location: ";
+  static const unsigned char seeOtherMsg2[] = "Location: ";
   write(seeOtherMsg2);
   write(otherURL);
   write(CRLF);

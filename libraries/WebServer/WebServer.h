@@ -149,6 +149,23 @@ enum URLPARAM_RESULT { URLPARAM_OK,
                        URLPARAM_EOS         // No params left
 };
 
+class Reader {
+public:
+    Reader() : m_pushbackDepth(0) {}
+
+    // returns next character or -1 if we're at end-of-stream
+    int read(TCPClient & client, bool readingContent, int *contentRemaining);
+
+    // put a character that's been read back into the input pool
+    void push(int ch);
+
+    void reset() { m_pushbackDepth = 0; }
+
+private:
+    unsigned char m_pushback[32];
+    unsigned char m_pushbackDepth;
+};
+
 class WebServer
 {
 public:
@@ -206,10 +223,10 @@ public:
   size_t write(const char *str) { return write((const unsigned char*)str); }
 
   // returns next character or -1 if we're at end-of-stream
-  int read();
+  int read() { return m_reader.read(m_client, m_readingContent, &m_contentLength); }
 
   // put a character that's been read back into the input pool
-  void push(int ch);
+  void push(int ch) { return m_reader.push(ch); }
 
   // returns true if the string is next in the stream.  Doesn't
   // consume any character if false, so can be used to try out
@@ -285,8 +302,7 @@ private:
 
   const char *m_urlPrefix;
 
-  unsigned char m_pushback[32];
-  unsigned char m_pushbackDepth;
+  Reader m_reader;
 
   int m_contentLength;
   char m_authCredentials[51];
@@ -329,7 +345,6 @@ WebServer::WebServer(const char *urlPrefix, uint16_t port) :
   m_server(port),
   m_client(),
   m_urlPrefix(urlPrefix),
-  m_pushbackDepth(0),
   m_contentLength(0),
   m_failureCmd(&defaultFailCmd),
   m_defaultCmd(&defaultFailCmd),
@@ -696,51 +711,40 @@ void WebServer::httpSeeOther(const char *otherURL)
   write(CRLF);
 }
 
-int WebServer::read()
+int Reader::read(TCPClient & client, bool readingContent, int * contentRemaining)
 {
-  if (!m_client)
+  if (!client)
     return -1;
 
   if (m_pushbackDepth == 0)
   {
     unsigned long timeoutTime = millis() + WEBDUINO_READ_TIMEOUT_IN_MS;
 
-    while (m_client.connected())
+    while (client.connected())
     {
       // stop reading the socket early if we get to content-length
       // characters in the POST.  This is because some clients leave
       // the socket open because they assume HTTP keep-alive.
-      if (m_readingContent)
+      if (readingContent)
       {
-        if (m_contentLength == 0)
+        if (*contentRemaining == 0)
         {
-#if WEBDUINO_SERIAL_DEBUGGING > 1
-          Serial.println("\n*** End of content, terminating connection");
-#endif
+          // End of content, terminating connection");
           return -1;
         }
       }
 
-      int ch = m_client.read();
+      int ch = client.read();
 
       // if we get a character, return it, otherwise continue in while
       // loop, checking connection status
       if (ch != -1)
       {
         // count character against content-length
-        if (m_readingContent)
+        if (readingContent)
         {
-          --m_contentLength;
+          --*contentRemaining;
         }
-
-#if WEBDUINO_SERIAL_DEBUGGING
-        if (ch == '\r')
-          Serial.print("<CR>");
-        else if (ch == '\n')
-          Serial.println("<LF>");
-        else
-          Serial.print((char)ch);
-#endif
         return ch;
       }
       else
@@ -749,9 +753,6 @@ int WebServer::read()
         if (now > timeoutTime)
         {
           // connection timed out, destroy client, return EOF
-#if WEBDUINO_SERIAL_DEBUGGING
-          Serial.println("*** Connection timed out");
-#endif
           reset();
           return -1;
         }
@@ -759,16 +760,13 @@ int WebServer::read()
     }
 
     // connection lost, return EOF
-#if WEBDUINO_SERIAL_DEBUGGING
-    Serial.println("*** Connection lost");
-#endif
     return -1;
   }
   else
     return m_pushback[--m_pushbackDepth];
 }
 
-void WebServer::push(int ch)
+void Reader::push(int ch)
 {
   // don't allow pushing EOF
   if (ch == -1)
@@ -782,7 +780,7 @@ void WebServer::push(int ch)
 
 void WebServer::reset()
 {
-  m_pushbackDepth = 0;
+  m_reader.reset();
   m_client.flush();
   m_client.stop();
 }

@@ -130,7 +130,9 @@
 extern "C" unsigned long millis(void);
 
 // returns the number of elements in the array
-#define SIZE(array) (sizeof(array) / sizeof(*array))
+template <typename T>
+size_t ArraySize(T array) { return sizeof(array) / sizeof(*array); }
+
 
 /********************************************************************
  * DECLARATIONS
@@ -356,7 +358,7 @@ void WebServer::setFailureCommand(Command *cmd)
 
 void WebServer::addCommand(const char *verb, Command *cmd)
 {
-  if (m_cmdCount < SIZE(m_commands))
+  if (m_cmdCount < ArraySize(m_commands))
   {
     m_commands[m_cmdCount].verb = verb;
     m_commands[m_cmdCount++].cmd = cmd;
@@ -774,8 +776,8 @@ void WebServer::push(int ch)
 
   m_pushback[m_pushbackDepth++] = ch;
   // can't raise error here, so just replace last char over and over
-  if (m_pushbackDepth == SIZE(m_pushback))
-    m_pushbackDepth = SIZE(m_pushback) - 1;
+  if (m_pushbackDepth == ArraySize(m_pushback))
+    m_pushbackDepth = ArraySize(m_pushback) - 1;
 }
 
 void WebServer::reset()

@@ -151,19 +151,47 @@ enum URLPARAM_RESULT { URLPARAM_OK,
 
 class Reader {
 public:
-    Reader() : m_pushbackDepth(0) {}
+    Reader(uint16_t port) : m_server(port), m_bufFill(0) { reset(); }
+
+    // start listening for connections
+    void begin() { m_server.begin(); }
+
+    // tells if there is anything to process
+    uint8_t available() { return m_server.available(); }
 
     // returns next character or -1 if we're at end-of-stream
-    int read(TCPClient & client, bool readingContent, int *contentRemaining);
+    int read();
+
+    size_t write(uint8_t);
+    size_t write(const uint8_t *buffer, size_t size);
+    size_t write(const unsigned char *str) { return write((const uint8_t*)str, strlen((const char*)str)); }
+    size_t write(const char *str) { return write((const unsigned char*)str); }
+
+    // returns true if the string is next in the stream.  Doesn't
+    // consume any character if false, so can be used to try out
+    // different expected values.
+    bool expect(const char *expectedStr);
+
+    void beginContent(int contentLength) { m_remainingContent = contentLength; }
 
     // put a character that's been read back into the input pool
     void push(int ch);
 
-    void reset() { m_pushbackDepth = 0; }
+    void reset();
+
+    bool nextClient();
+
+    // Flush the send buffer
+    void flushBuf();
 
 private:
+    TCPServer m_server;
+    TCPClient m_client;
     unsigned char m_pushback[32];
     unsigned char m_pushbackDepth;
+    int m_remainingContent;
+    uint8_t m_buffer[WEBDUINO_OUTPUT_BUFFER_SIZE];
+    uint8_t m_bufFill;
 };
 
 class WebServer
@@ -192,7 +220,7 @@ public:
   WebServer(const char *urlPrefix = "", uint16_t port = 80);
 
   // start listening for connections
-  void begin();
+  void begin() { m_reader.begin(); }
 
   // check for an incoming connection, and if it exists, process it
   // by reading its request and calling the appropriate command
@@ -216,22 +244,6 @@ public:
   // not run, uses extra url_path parameter to allow resolving the URL in the
   // function.
   void setUrlPathCommand(UrlPathCommand *cmd);
-
-  size_t write(uint8_t);
-  size_t write(const uint8_t *buffer, size_t size);
-  size_t write(const unsigned char *str) { return write((const uint8_t*)str, strlen((const char*)str)); }
-  size_t write(const char *str) { return write((const unsigned char*)str); }
-
-  // returns next character or -1 if we're at end-of-stream
-  int read() { return m_reader.read(m_client, m_readingContent, &m_contentLength); }
-
-  // put a character that's been read back into the input pool
-  void push(int ch) { return m_reader.push(ch); }
-
-  // returns true if the string is next in the stream.  Doesn't
-  // consume any character if false, so can be used to try out
-  // different expected values.
-  bool expect(const char *expectedStr);
 
   // returns true if a number, with possible whitespace in front, was
   // read from the server stream.  number will be set with the new
@@ -291,22 +303,18 @@ public:
   uint8_t available();
 
   // Flush the send buffer
-  void flushBuf(); 
+  void flushBuf() { m_reader.flushBuf(); }
 
   // Close the current connection and flush ethernet buffers
-  void reset(); 
+  void reset() { m_reader.reset(); }
+
 private:
   
-  TCPServer m_server;
-  TCPClient m_client;
-
   const char *m_urlPrefix;
 
   Reader m_reader;
 
-  int m_contentLength;
   char m_authCredentials[51];
-  bool m_readingContent;
 
   Command *m_failureCmd;
   Command *m_defaultCmd;
@@ -317,9 +325,6 @@ private:
   } m_commands[WEBDUINO_COMMANDS_COUNT];
   unsigned char m_cmdCount;
   UrlPathCommand *m_urlPathCmd;
-
-  uint8_t m_buffer[WEBDUINO_OUTPUT_BUFFER_SIZE];
-  uint8_t m_bufFill;
 
   void getRequest(WebServer::ConnectionType &type, char *request, int *length);
   bool dispatchCommand(ConnectionType requestType, char *verb,
@@ -342,24 +347,16 @@ private:
  ********************************************************************/
 
 WebServer::WebServer(const char *urlPrefix, uint16_t port) :
-  m_server(port),
-  m_client(),
   m_urlPrefix(urlPrefix),
-  m_contentLength(0),
+  m_reader(port),
   m_failureCmd(&defaultFailCmd),
   m_defaultCmd(&defaultFailCmd),
   m_cmdCount(0),
-  m_urlPathCmd(NULL),
-  m_bufFill(0)
+  m_urlPathCmd(NULL)
 {
 }
 
 static const unsigned char webServerHeader[] = "Server: Webduino/" WEBDUINO_VERSION_STRING CRLF;
-
-void WebServer::begin()
-{
-  m_server.begin();
-}
 
 void WebServer::setDefaultCommand(Command *cmd)
 {
@@ -385,7 +382,7 @@ void WebServer::setUrlPathCommand(UrlPathCommand *cmd)
   m_urlPathCmd = cmd;
 }
 
-size_t WebServer::write(uint8_t ch)
+size_t Reader::write(uint8_t ch)
 {
   m_buffer[m_bufFill++] = ch;
 
@@ -397,7 +394,7 @@ size_t WebServer::write(uint8_t ch)
   return sizeof(ch);
 }
 
-size_t WebServer::write(const uint8_t *buffer, size_t size)
+size_t Reader::write(const uint8_t *buffer, size_t size)
 {
   flushBuf(); //Flush any buffered output
   SERIAL_DUMP(buffer, size);
@@ -405,7 +402,7 @@ size_t WebServer::write(const uint8_t *buffer, size_t size)
   return m_client.write(buffer, size);
 }
 
-void WebServer::flushBuf()
+void Reader::flushBuf()
 {
   if(m_bufFill > 0)
   {
@@ -502,14 +499,19 @@ void WebServer::unhandledCommmand(ConnectionType requestType, char *verb,
      m_failureCmd(*this, requestType, verb, tail_complete);
 }
 
+bool Reader::nextClient()
+{
+    m_client.stop();
+    m_client = m_server.available();
+    reset();
+    return m_client.status();
+}
+
 void WebServer::processConnection(char *buff, int *bufflen)
 {
   int urlPrefixLen = strlen(m_urlPrefix);
 
-  m_client = m_server.available();
-
-  if (m_client) {
-    m_readingContent = false;
+  if (m_reader.nextClient()) {
     buff[0] = 0;
     ConnectionType requestType = INVALID;
 #if WEBDUINO_SERIAL_DEBUGGING > 1
@@ -558,7 +560,7 @@ void WebServer::processConnection(char *buff, int *bufflen)
       }
     }
     
-    flushBuf();
+    m_reader.flushBuf();
 
 #if WEBDUINO_SERIAL_DEBUGGING > 1
     Serial.println("*** stopping connection ***");
@@ -578,10 +580,10 @@ bool WebServer::checkCredentials(const char authCredentials[45])
 void WebServer::httpFail()
 {
   static const unsigned char failMsg1[] = "HTTP/1.0 400 Bad Request" CRLF;
-  write(failMsg1);
+  m_reader.write(failMsg1);
 
 #ifndef WEBDUINO_SUPRESS_SERVER_HEADER
-  write(webServerHeader);
+  m_reader.write(webServerHeader);
 #endif
 
   static const unsigned char failMsg2[] =
@@ -589,7 +591,7 @@ void WebServer::httpFail()
     CRLF
     WEBDUINO_FAIL_MESSAGE;
 
-  write(failMsg2);
+  m_reader.write(failMsg2);
 }
 
 void WebServer::defaultFailCmd(WebServer &server,
@@ -606,7 +608,7 @@ void WebServer::noRobots(ConnectionType type)
   if (type != HEAD)
   {
     static const unsigned char allowNoneMsg[] = "User-agent: *" CRLF "Disallow: /" CRLF;
-    write(allowNoneMsg);
+    m_reader.write(allowNoneMsg);
   }
 }
 
@@ -616,17 +618,17 @@ void WebServer::favicon(ConnectionType type)
   if (type != HEAD)
   {
     static const unsigned char faviconIco[] = WEBDUINO_FAVICON_DATA;
-    write(faviconIco, sizeof(faviconIco));
+    m_reader.write(faviconIco, sizeof(faviconIco));
   }
 }
 
 void WebServer::httpUnauthorized()
 {
   static const unsigned char unauthMsg1[] = "HTTP/1.0 401 Authorization Required" CRLF;
-  write(unauthMsg1);
+  m_reader.write(unauthMsg1);
 
 #ifndef WEBDUINO_SUPRESS_SERVER_HEADER
-  write(webServerHeader);
+  m_reader.write(webServerHeader);
 #endif
 
   static const unsigned char unauthMsg2[] =
@@ -635,16 +637,16 @@ void WebServer::httpUnauthorized()
     CRLF
     WEBDUINO_AUTH_MESSAGE;
 
-  write(unauthMsg2);
+  m_reader.write(unauthMsg2);
 }
 
 void WebServer::httpServerError()
 {
   static const unsigned char servErrMsg1[] = "HTTP/1.0 500 Internal Server Error" CRLF;
-  write(servErrMsg1);
+  m_reader.write(servErrMsg1);
 
 #ifndef WEBDUINO_SUPRESS_SERVER_HEADER
-  write(webServerHeader);
+  m_reader.write(webServerHeader);
 #endif
 
   static const unsigned char servErrMsg2[] =
@@ -652,98 +654,95 @@ void WebServer::httpServerError()
     CRLF
     WEBDUINO_SERVER_ERROR_MESSAGE;
 
-  write(servErrMsg2);
+  m_reader.write(servErrMsg2);
 }
 
 void WebServer::httpNoContent()
 {
   static const unsigned char noContentMsg1[] = "HTTP/1.0 204 NO CONTENT" CRLF;
-  write(noContentMsg1);
+  m_reader.write(noContentMsg1);
 
 #ifndef WEBDUINO_SUPRESS_SERVER_HEADER
-  write(webServerHeader);
+  m_reader.write(webServerHeader);
 #endif
 
   static const unsigned char noContentMsg2[] =
     CRLF
     CRLF;
 
-  write(noContentMsg2);
+  m_reader.write(noContentMsg2);
 }
 
 void WebServer::httpSuccess(const char *contentType,
                             const char *extraHeaders)
 {
   static const unsigned char successMsg1[] = "HTTP/1.0 200 OK" CRLF;
-  write(successMsg1);
+  m_reader.write(successMsg1);
 
 #ifndef WEBDUINO_SUPRESS_SERVER_HEADER
-  write(webServerHeader);
+  m_reader.write(webServerHeader);
 #endif
   
   static const unsigned char successMsg2[] =
     "Access-Control-Allow-Origin: *" CRLF
     "Content-Type: ";
 
-  write(successMsg2);
-  write(contentType);
-  write(CRLF);
+  m_reader.write(successMsg2);
+  m_reader.write(contentType);
+  m_reader.write(CRLF);
   if (extraHeaders) {
-    write(extraHeaders);
-    write(CRLF);
+    m_reader.write(extraHeaders);
+    m_reader.write(CRLF);
   }
-  write(CRLF);   // blank line starts body
+  m_reader.write(CRLF);   // blank line starts body
 }
 
 void WebServer::httpSeeOther(const char *otherURL)
 {
   static const unsigned char seeOtherMsg1[] = "HTTP/1.0 303 See Other" CRLF;
-  write(seeOtherMsg1);
+  m_reader.write(seeOtherMsg1);
 
 #ifndef WEBDUINO_SUPRESS_SERVER_HEADER
-  write(webServerHeader);
+  m_reader.write(webServerHeader);
 #endif
 
   static const unsigned char seeOtherMsg2[] = "Location: ";
-  write(seeOtherMsg2);
-  write(otherURL);
-  write(CRLF);
-  write(CRLF);
+  m_reader.write(seeOtherMsg2);
+  m_reader.write(otherURL);
+  m_reader.write(CRLF);
+  m_reader.write(CRLF);
 }
 
-int Reader::read(TCPClient & client, bool readingContent, int * contentRemaining)
+int Reader::read()
 {
-  if (!client)
+  if (!m_client)
     return -1;
 
   if (m_pushbackDepth == 0)
   {
     unsigned long timeoutTime = millis() + WEBDUINO_READ_TIMEOUT_IN_MS;
 
-    while (client.connected())
+    while (m_client.connected())
     {
       // stop reading the socket early if we get to content-length
       // characters in the POST.  This is because some clients leave
       // the socket open because they assume HTTP keep-alive.
-      if (readingContent)
+      if (m_remainingContent == 0)
       {
-        if (*contentRemaining == 0)
-        {
-          // End of content, terminating connection");
-          return -1;
-        }
+        // End of content, terminating connection");
+        return -1;
       }
 
-      int ch = client.read();
+      int ch = m_client.read();
 
       // if we get a character, return it, otherwise continue in while
       // loop, checking connection status
       if (ch != -1)
       {
         // count character against content-length
-        if (readingContent)
+        if (m_remainingContent > 0)
         {
-          --*contentRemaining;
+          --m_remainingContent;
         }
         return ch;
       }
@@ -778,14 +777,15 @@ void Reader::push(int ch)
     m_pushbackDepth = ArraySize(m_pushback) - 1;
 }
 
-void WebServer::reset()
+void Reader::reset()
 {
-  m_reader.reset();
-  m_client.flush();
-  m_client.stop();
+    m_pushbackDepth = 0;
+    m_remainingContent = -1;
+    m_client.flush();
+    m_client.stop();
 }
 
-bool WebServer::expect(const char *str)
+bool Reader::expect(const char *str)
 {
   const char *curr = str;
   while (*curr != 0)
@@ -813,14 +813,14 @@ bool WebServer::readInt(int &number)
   // absorb whitespace
   do
   {
-    ch = read();
+    ch = m_reader.read();
   } while (ch == ' ' || ch == '\t');
 
   // check for leading minus sign
   if (ch == '-')
   {
     negate = true;
-    ch = read();
+    ch = m_reader.read();
   }
 
   // read digits to update number, exit when we find non-digit
@@ -828,10 +828,10 @@ bool WebServer::readInt(int &number)
   {
     gotNumber = true;
     number = number * 10 + ch - '0';
-    ch = read();
+    ch = m_reader.read();
   }
 
-  push(ch);
+  m_reader.push(ch);
   if (negate)
     number = -number;
   return gotNumber;
@@ -846,7 +846,7 @@ void WebServer::readHeader(char *value, int valueLen)
   // absorb whitespace
   do
   {
-    ch = read();
+    ch = m_reader.read();
   } while (ch == ' ' || ch == '\t');
 
   // read rest of line
@@ -857,9 +857,9 @@ void WebServer::readHeader(char *value, int valueLen)
       *value++=ch;
       --valueLen;
     }
-    ch = read();
+    ch = m_reader.read();
   } while (ch != '\r');
-  push(ch);
+  m_reader.push(ch);
 }
 
 bool WebServer::readPOSTparam(char *name, int nameLen,
@@ -878,7 +878,7 @@ bool WebServer::readPOSTparam(char *name, int nameLen,
   --nameLen;
   --valueLen;
 
-  while ((ch = read()) != -1)
+  while ((ch = m_reader.read()) != -1)
   {
     foundSomething = true;
     if (ch == '+')
@@ -899,8 +899,8 @@ bool WebServer::readPOSTparam(char *name, int nameLen,
     else if (ch == '%')
     {
       /* handle URL encoded characters by converting back to original form */
-      int ch1 = read();
-      int ch2 = read();
+      int ch1 = m_reader.read();
+      int ch2 = m_reader.read();
       if (ch1 == -1 || ch2 == -1)
         return false;
       char hex[3] = { ch1, ch2, '\x0' };
@@ -1099,17 +1099,17 @@ void WebServer::getRequest(WebServer::ConnectionType &type,
   type = INVALID;
 
   // store the HTTP method line of the request
-  if (expect("GET "))
+  if (m_reader.expect("GET "))
     type = GET;
-  else if (expect("HEAD "))
+  else if (m_reader.expect("HEAD "))
     type = HEAD;
-  else if (expect("POST "))
+  else if (m_reader.expect("POST "))
     type = POST;
-  else if (expect("PUT "))
+  else if (m_reader.expect("PUT "))
     type = PUT;
-  else if (expect("DELETE "))
+  else if (m_reader.expect("DELETE "))
     type = DELETE;
-  else if (expect("PATCH "))
+  else if (m_reader.expect("PATCH "))
     type = PATCH;
 
   // if it doesn't start with any of those, we have an unknown method
@@ -1118,7 +1118,7 @@ void WebServer::getRequest(WebServer::ConnectionType &type,
     return;
 
   int ch;
-  while ((ch = read()) != -1)
+  while ((ch = m_reader.read()) != -1)
   {
     // stop storing at first space or end of line
     if (ch == ' ' || ch == '\n' || ch == '\r')
@@ -1146,20 +1146,22 @@ void WebServer::processHeaders()
   // like the last user who tried to authenticate (possibly successful)
   m_authCredentials[0]=0;
 
+  int contentLength;
+
   while (1)
   {
-    if (expect("Content-Length:"))
+    if (m_reader.expect("Content-Length:"))
     {
-      readInt(m_contentLength);
+      readInt(contentLength);
 #if WEBDUINO_SERIAL_DEBUGGING > 1
       Serial.print("\n*** got Content-Length of ");
-      Serial.print(m_contentLength);
+      Serial.print(contentLength);
       Serial.print(" ***");
 #endif
       continue;
     }
 
-    if (expect("Authorization:"))
+    if (m_reader.expect("Authorization:"))
     {
       readHeader(m_authCredentials,51);
 #if WEBDUINO_SERIAL_DEBUGGING > 1
@@ -1170,22 +1172,18 @@ void WebServer::processHeaders()
       continue;
     }
 
-    if (expect(CRLF CRLF))
+    if (m_reader.expect(CRLF CRLF))
     {
-      m_readingContent = true;
+      m_reader.beginContent(contentLength);
       return;
     }
 
     // no expect checks hit, so just absorb a character and try again
-    if (read() == -1)
+    if (m_reader.read() == -1)
     {
       return;
     }
   }
-}
-
-uint8_t WebServer::available(){
-  return m_server.available();
 }
 
 #endif // WEBDUINO_NO_IMPLEMENTATION

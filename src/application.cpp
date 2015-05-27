@@ -1,11 +1,14 @@
 #include "OneWire/OneWire.h"
 #include "spark-dallas-temperature/spark-dallas-temperature.h"
+#include "WebServer/WebServer.h"
 
 OneWire ds(D3);
 DallasTemperature sensors(&ds);
 
 double pressure = 0;
 double temperature = 0;
+
+WebServer webServer;
 
 unsigned long last_executed;
 
